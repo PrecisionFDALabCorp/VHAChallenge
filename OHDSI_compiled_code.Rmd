@@ -1,0 +1,820 @@
+---
+title: "precisionFDA"
+author: "Pallavi Misra"
+date: "6/18/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r library, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##### __Dependencies and Requirements__
+* R version 4.0.0
+* RTools40
+* PostgreSQL12
+* Download all CDM version 5 vocabularies from Athena.ohdsi.org
+
+#### Packages to install
+
+```{r setup, eval=TRUE}
+install.packages('devtools')
+install.packages('bit64')
+install.packages("DatabaseConnector")
+install.packages("usethis")
+devtools::install_github("OHDSI/ETL-Synthea")
+install.packages("drat")
+drat::addRepo("OHDSI")
+install.packages("PatientLevelPrediction")
+install.packages("FeatureExtraction") 
+install.packages("Andromeda") 
+install.packages("dplyr") 
+install.packages("Cyclops")
+```
+
+#### Load Libraries
+
+```{r libraries, eval=TRUE}
+library(usethis)
+library(DatabaseConnector)
+library(ETLSyntheaBuilder)
+library(SqlRender)
+library(devtools) 
+library(dplyr)
+library(Andromeda)
+library(FeatureExtraction) 
+library(Cyclops)
+library(PatientLevelPrediction)
+```
+
+#### Make connection with PostgreSQL
+
+Enter your server details below.
+
+```{r connection details, eval=TRUE}
+cd <- DatabaseConnector::createConnectionDetails(
+  dbms     = "postgresql", 
+  server   = "localhost/postgres", 
+  user     = "postgres", 
+  password = "****", 
+  port     = 5432)
+conn <- connect(cd)
+```
+
+
+
+### Create the Common Data Model for Train Data
+
+#### Create schemas for Common Data Model, vocabularies and csv files
+_execute this command only if schemas do not exist, otherwise it will throw an error_
+
+```{r create schemas, eval=TRUE}
+sql <- "create schema cdm_precision;
+create schema precision_native;"
+renderTranslateExecuteSql(conn, sql)
+```
+
+#### Drop all existing tables 
+
+```{r drop existing tables, eval=TRUE}
+ETLSyntheaBuilder::DropVocabTables(connectionDetails = cd, vocabDatabaseSchema = "cdm_precision")
+ETLSyntheaBuilder::DropEventTables(connectionDetails = cd, cdmDatabaseSchema = "cdm_precision")
+ETLSyntheaBuilder::DropSyntheaTables(connectionDetails = cd, syntheaDatabaseSchema = "precision_native")
+ETLSyntheaBuilder::DropMapAndRollupTables (connectionDetails = cd, cdmDatabaseSchema = "cdm_precision")
+```
+
+#### Import csv files
+
+syntheaFileLoc: location of input csv files
+
+_Delete the Organizations column from encounters.csv_
+
+```{r import csv files, eval=TRUE}
+ETLSyntheaBuilder::CreateSyntheaTables(connectionDetails = cd, syntheaDatabaseSchema = "precision_native")
+ETLSyntheaBuilder::LoadSyntheaTables(connectionDetails = cd, syntheaDatabaseSchema = "precision_native", syntheaFileLoc = syntheaFileLoc) 
+```
+
+#### Create vocabulary tables
+
+```{r create vocabulary tables, eval=TRUE}
+ETLSyntheaBuilder::CreateVocabTables(connectionDetails = cd, vocabDatabaseSchema = "cdm_precision")
+```
+
+#### Change type of concept_name and concept_synonym_name to text
+
+```{r change type, eval=TRUE}
+sql <- "alter table @cdm.concept alter column concept_name type text;
+alter table @cdm.concept_synonym alter column concept_synonym_name type text;"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision")
+```
+
+#### Load vocabulary tables
+
+vocabFileLoc: location of vocabulary files
+
+```{r load vocabulary tables, eval=TRUE}
+ETLSyntheaBuilder::LoadVocabFromCsv(connectionDetails = cd, cdmDatabaseSchema = "cdm_precision", vocabFileLoc = vocabFileLoc) 
+```
+
+#### Build the Common Data Model
+
+```{r CDM Builder, eval=TRUE}
+ETLSyntheaBuilder::CreateVocabMapTables(connectionDetails = cd, cdmDatabaseSchema = "cdm_precision")
+ETLSyntheaBuilder::CreateEventTables(connectionDetails = cd, cdmDatabaseSchema = "cdm_precision")
+ETLSyntheaBuilder::CreateVisitRollupTables(cd, cdmDatabaseSchema = "cdm_precision", syntheaDatabaseSchema = "precision_native")
+ETLSyntheaBuilder::LoadEventTables(cd, cdmDatabaseSchema = "cdm_precision", syntheaDatabaseSchema = "precision_native", vocabDatabaseSchema = "cdm_precision")
+```
+
+#### Change names of a few columns
+
+```{r change names, eval=TRUE}
+sql <- "alter table cdm_precision.condition_era rename column condition_era_start_datetime to condition_era_start_date;
+alter table cdm_precision.condition_era rename column condition_era_end_datetime to condition_era_end_date;
+alter table cdm_precision.drug_era rename column drug_era_start_datetime to drug_era_start_date;
+alter table cdm_precision.drug_era rename column drug_era_end_datetime to drug_era_end_date;"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision")
+```
+
+
+
+### Create the Common Data Model for Test Data
+
+#### Create schemas for Common Data Model, vocabularies and csv files
+_execute this command only if schemas do not exist, otherwise it will throw an error_
+
+```{r create schemas, eval=TRUE}
+sql <- "create schema cdm_precision_test;
+create schema precision_native_test;"
+renderTranslateExecuteSql(conn, sql)
+```
+
+#### Drop all existing tables 
+
+```{r drop existing tables, eval=TRUE}
+ETLSyntheaBuilder::DropVocabTables(connectionDetails = cd, vocabDatabaseSchema = "cdm_precision_test")
+ETLSyntheaBuilder::DropEventTables(connectionDetails = cd, cdmDatabaseSchema = "cdm_precision_test")
+ETLSyntheaBuilder::DropSyntheaTables(connectionDetails = cd, syntheaDatabaseSchema = "precision_native_test")
+ETLSyntheaBuilder::DropMapAndRollupTables (connectionDetails = cd, cdmDatabaseSchema = "cdm_precision_test")
+```
+
+#### Import csv files
+
+syntheaFileLoc: location of input csv files
+
+_Delete the Organizations column from encounters.csv_
+
+```{r import csv files, eval=TRUE}
+ETLSyntheaBuilder::CreateSyntheaTables(connectionDetails = cd, syntheaDatabaseSchema = "precision_native_test")
+ETLSyntheaBuilder::LoadSyntheaTables(connectionDetails = cd, syntheaDatabaseSchema = "precision_native_test", syntheaFileLoc = syntheaFileLoc) 
+```
+
+#### Create vocabulary tables
+
+```{r create vocabulary tables, eval=FALSE}
+ETLSyntheaBuilder::CreateVocabTables(connectionDetails = cd, vocabDatabaseSchema = "cdm_precision_test")
+```
+
+#### Change type of concept_name and concept_synonym_name to text
+
+```{r change type, eval=TRUE}
+sql <- "alter table @cdm.concept alter column concept_name type text;
+alter table @cdm.concept_synonym alter column concept_synonym_name type text;"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision_test")
+```
+
+#### Load vocabulary tables
+
+vocabFileLoc: location of vocabulary files
+
+```{r load vocabulary tables, eval=FALSE}
+ETLSyntheaBuilder::LoadVocabFromCsv(connectionDetails = cd, cdmDatabaseSchema = "cdm_precision_test", vocabFileLoc = vocabFileLoc) 
+```
+
+#### Build the Common Data Model
+
+```{r CDM Builder, eval=TRUE}
+ETLSyntheaBuilder::CreateVocabMapTables(connectionDetails = cd, cdmDatabaseSchema = "cdm_precision_test")
+ETLSyntheaBuilder::CreateEventTables(connectionDetails = cd, cdmDatabaseSchema = "cdm_precision_test")
+ETLSyntheaBuilder::CreateVisitRollupTables(cd, cdmDatabaseSchema = "cdm_precision_test", syntheaDatabaseSchema = "precision_native_test")
+ETLSyntheaBuilder::LoadEventTables(cd, cdmDatabaseSchema = "cdm_precision_test", syntheaDatabaseSchema = "precision_native_test", vocabDatabaseSchema = "cdm_precision_test")
+```
+
+#### Change names of a few columns
+
+```{r change names, eval=TRUE}
+sql <- "alter table cdm_precision_test.condition_era rename column condition_era_start_datetime to condition_era_start_date;
+alter table cdm_precision_test.condition_era rename column condition_era_end_datetime to condition_era_end_date;
+alter table cdm_precision_test.drug_era rename column drug_era_start_datetime to drug_era_start_date;
+alter table cdm_precision_test.drug_era rename column drug_era_end_datetime to drug_era_end_date;"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision_test")
+```
+
+
+
+### Train data- Make Cohorts, set Covariate, extract plpData, make Population and Run Model
+
+#### Make cohort table in cdm_precision schema
+
+```{r create cohort table, eval=TRUE}
+sql <- "drop table if exists @cdm.cohort;
+CREATE TABLE @cdm.cohort (  subject_id bigint,  cohort_start_date date, cohort_end_date date,  cohort_definition_id integer);"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision")
+```
+
+#### Cohort 1: All patients
+
+```{r create cohort 1, eval=TRUE}
+sql <- "SELECT person_id AS subject_id,
+ condition_start_date AS cohort_start_date,
+ condition_end_date AS cohort_end_date
+INTO #diagnoses
+FROM @cdm.condition_occurrence
+WHERE condition_concept_id IN (
+   SELECT descendant_concept_id
+   FROM @cdm.concept_ancestor
+);"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision")
+
+sql <- "INSERT INTO @cdm.cohort (
+  subject_id, 
+  cohort_start_date,
+  cohort_end_date,
+  cohort_definition_id
+  )
+SELECT subject_id,
+  cohort_start_date,
+  cohort_end_date,
+  CAST (1 AS INT) AS cohort_definition_id
+FROM #diagnoses;"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision")
+
+sql <- "TRUNCATE TABLE #diagnoses;
+DROP TABLE #diagnoses;"
+renderTranslateExecuteSql(conn, sql)
+```
+
+#### Cohort 2: COVID-19 patients
+
+```{r create cohort 2, eval=TRUE}
+sql <- "SELECT person_id AS subject_id,
+ condition_start_date AS cohort_start_date,
+ condition_end_date AS cohort_end_date
+INTO #diagnoses
+FROM @cdm.condition_occurrence
+WHERE condition_concept_id IN (
+   SELECT descendant_concept_id
+   FROM @cdm.concept_ancestor
+     WHERE ancestor_concept_id = 37311061 -- COVID-19
+);"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision")
+
+sql <- "INSERT INTO @cdm.cohort (
+  subject_id, 
+  cohort_start_date,
+  cohort_end_date,
+  cohort_definition_id
+  )
+SELECT subject_id,
+  cohort_start_date,
+  cohort_end_date,
+  CAST (2 AS INT) AS cohort_definition_id
+FROM #diagnoses;"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision")
+
+sql <- "TRUNCATE TABLE #diagnoses;
+DROP TABLE #diagnoses;"
+renderTranslateExecuteSql(conn, sql)
+```
+
+#### Cohort 3: Deceased patients
+
+```{r create cohort 3, eval=TRUE}
+sql <- "SELECT person_id AS subject_id,
+ condition_start_date AS cohort_start_date,
+ condition_end_date AS cohort_end_date
+INTO #diagnoses
+FROM @cdm.condition_occurrence
+WHERE condition_concept_id IN (
+   SELECT descendant_concept_id
+   FROM @cdm.concept_ancestor
+     WHERE ancestor_concept_id = 37311061 -- COVID-19
+);"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision")
+
+sql <- "SELECT person_id AS subject_id,
+ death_datetime
+INTO #diagnoses_one
+FROM @cdm.person
+WHERE death_datetime is not NULL;"
+
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision")
+
+sql <- "select * 
+into #diagnoses_two
+from (Select abc.subject_id, abc.death_datetime as cohort_start_date, date('2070-01-01') as cohort_end_date
+From #diagnoses_one abc
+Inner Join #diagnoses on abc.subject_id=#diagnoses.subject_id) as whatever;"
+
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision")
+
+sql <- "INSERT INTO @cdm.cohort (
+  subject_id, 
+  cohort_start_date,
+  cohort_end_date,
+  cohort_definition_id
+  )
+SELECT subject_id,
+  cohort_start_date,
+  cohort_end_date,
+  CAST (3 AS INT) AS cohort_definition_id
+FROM #diagnoses_two;"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision")
+
+sql <- "TRUNCATE TABLE #diagnoses;
+DROP TABLE #diagnoses;"
+renderTranslateExecuteSql(conn, sql)
+
+sql <- "TRUNCATE TABLE #diagnoses_one;
+DROP TABLE #diagnoses_one;"
+renderTranslateExecuteSql(conn, sql)
+
+sql <- "TRUNCATE TABLE #diagnoses_two;
+DROP TABLE #diagnoses_two;"
+renderTranslateExecuteSql(conn, sql)
+```
+
+#### Cohort 4: Ventilation patients
+
+```{r create cohort 4, eval=TRUE}
+sql <- "SELECT person_id AS subject_id,
+ condition_start_date AS cohort_start_date,
+ condition_end_date AS cohort_end_date
+INTO #diagnoses
+FROM @cdm.condition_occurrence
+WHERE condition_concept_id IN (
+   SELECT descendant_concept_id
+   FROM @cdm.concept_ancestor
+     WHERE ancestor_concept_id = 37311061 -- COVID-19
+);"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision")
+
+sql <- "SELECT person_id AS subject_id
+INTO #diagnoses_one
+FROM @cdm.procedure_occurrence
+WHERE procedure_source_value = '26763009' -- Ventilation
+;"
+
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision")
+
+sql <- "select abc.subject_id, abc.cohort_start_date, abc.cohort_end_date 
+into #diagnoses_two
+From #diagnoses abc
+Inner Join #diagnoses_one on abc.subject_id=#diagnoses_one.subject_id;"
+
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision")
+
+sql <- "INSERT INTO @cdm.cohort (
+  subject_id, 
+  cohort_start_date,
+  cohort_end_date,
+  cohort_definition_id
+  )
+SELECT subject_id,
+  cohort_start_date,
+  cohort_end_date,
+  CAST (4 AS INT) AS cohort_definition_id
+FROM #diagnoses_two;"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision")
+
+sql <- "TRUNCATE TABLE #diagnoses;
+DROP TABLE #diagnoses;"
+renderTranslateExecuteSql(conn, sql)
+
+sql <- "TRUNCATE TABLE #diagnoses_one;
+DROP TABLE #diagnoses_one;"
+renderTranslateExecuteSql(conn, sql)
+
+sql <- "TRUNCATE TABLE #diagnoses_two;
+DROP TABLE #diagnoses_two;"
+renderTranslateExecuteSql(conn, sql)
+```
+
+#### Covariate settings
+
+```{r covariate settings COVID, eval=TRUE}
+covSettings_COVID <- createCovariateSettings(useDemographicsGender = TRUE,
+                                    useDemographicsAge = TRUE,
+                                    useDemographicsRace = TRUE,
+                                    useDemographicsEthnicity = TRUE,
+                                    useDemographicsIndexYear = TRUE,
+                                    useConditionOccurrenceAnyTimePrior = TRUE,
+                                    useConditionOccurrencePrimaryInpatientAnyTimePrior = TRUE,
+                                    useConditionEraAnyTimePrior = TRUE,
+                                    useConditionGroupEraAnyTimePrior = TRUE,
+                                    useDrugExposureAnyTimePrior = TRUE,
+                                    useDrugEraAnyTimePrior = TRUE,
+                                    useDrugGroupEraAnyTimePrior = TRUE,
+                                    useProcedureOccurrenceAnyTimePrior = TRUE,
+                                    useDeviceExposureAnyTimePrior = TRUE,
+                                    useMeasurementAnyTimePrior = TRUE,
+                                    useMeasurementValueAnyTimePrior = TRUE,
+                                    useMeasurementRangeGroupAnyTimePrior = TRUE,
+                                    useObservationAnyTimePrior = TRUE,
+                                    useCharlsonIndex = TRUE,
+                                    useDcsi = TRUE,
+                                    useChads2 = TRUE,
+                                    useChads2Vasc = TRUE,
+                                    useHfrs = TRUE,
+                                    useDistinctConditionCountLongTerm = TRUE,
+                                    useDistinctIngredientCountLongTerm = TRUE,
+                                    useDistinctProcedureCountLongTerm = TRUE,
+                                    useDistinctMeasurementCountLongTerm = TRUE,
+                                    useDistinctObservationCountLongTerm = TRUE,
+                                    useVisitCountLongTerm = TRUE,
+                                    useVisitConceptCountLongTerm = TRUE,
+                                    longTermStartDays = -365,
+                                    excludedCovariateConceptIds = ####################,
+                                    endDays = 0)
+```
+
+```{r covariate settings Death, eval=TRUE}
+covSettings_COVIDDeath <- createCovariateSettings(useDemographicsGender = TRUE,
+                                    useDemographicsAge = TRUE,
+                                    useDemographicsRace = TRUE,
+                                    useDemographicsEthnicity = TRUE,
+                                    useDemographicsIndexYear = TRUE,
+                                    useConditionOccurrenceAnyTimePrior = TRUE,
+                                    useConditionOccurrencePrimaryInpatientAnyTimePrior = TRUE,
+                                    useConditionEraAnyTimePrior = TRUE,
+                                    useConditionGroupEraAnyTimePrior = TRUE,
+                                    useDrugExposureAnyTimePrior = TRUE,
+                                    useDrugEraAnyTimePrior = TRUE,
+                                    useDrugGroupEraAnyTimePrior = TRUE,
+                                    useProcedureOccurrenceAnyTimePrior = TRUE,
+                                    useDeviceExposureAnyTimePrior = TRUE,
+                                    useMeasurementAnyTimePrior = TRUE,
+                                    useMeasurementValueAnyTimePrior = TRUE,
+                                    useMeasurementRangeGroupAnyTimePrior = TRUE,
+                                    useObservationAnyTimePrior = TRUE,
+                                    useCharlsonIndex = TRUE,
+                                    useDcsi = TRUE,
+                                    useChads2 = TRUE,
+                                    useChads2Vasc = TRUE,
+                                    useHfrs = TRUE,
+                                    useDistinctConditionCountLongTerm = TRUE,
+                                    useDistinctIngredientCountLongTerm = TRUE,
+                                    useDistinctProcedureCountLongTerm = TRUE,
+                                    useDistinctMeasurementCountLongTerm = TRUE,
+                                    useDistinctObservationCountLongTerm = TRUE,
+                                    useVisitCountLongTerm = TRUE,
+                                    useVisitConceptCountLongTerm = TRUE,
+                                    longTermStartDays = -365,
+                                    endDays = 0)
+```
+
+```{r covariate settings Vent, eval=TRUE}
+covSettings_COVIDVent <- createCovariateSettings(useDemographicsGender = TRUE,
+                                    useDemographicsAge = TRUE,
+                                    useDemographicsRace = TRUE,
+                                    useDemographicsEthnicity = TRUE,
+                                    useDemographicsIndexYear = TRUE,
+                                    useConditionOccurrenceAnyTimePrior = TRUE,
+                                    useConditionOccurrencePrimaryInpatientAnyTimePrior = TRUE,
+                                    useConditionEraAnyTimePrior = TRUE,
+                                    useConditionGroupEraAnyTimePrior = TRUE,
+                                    useDrugExposureAnyTimePrior = TRUE,
+                                    useDrugEraAnyTimePrior = TRUE,
+                                    useDrugGroupEraAnyTimePrior = TRUE,
+                                    useProcedureOccurrenceAnyTimePrior = TRUE,
+                                    useDeviceExposureAnyTimePrior = TRUE,
+                                    useMeasurementAnyTimePrior = TRUE,
+                                    useMeasurementValueAnyTimePrior = TRUE,
+                                    useMeasurementRangeGroupAnyTimePrior = TRUE,
+                                    useObservationAnyTimePrior = TRUE,
+                                    useCharlsonIndex = TRUE,
+                                    useDcsi = TRUE,
+                                    useChads2 = TRUE,
+                                    useChads2Vasc = TRUE,
+                                    useHfrs = TRUE,
+                                    useDistinctConditionCountLongTerm = TRUE,
+                                    useDistinctIngredientCountLongTerm = TRUE,
+                                    useDistinctProcedureCountLongTerm = TRUE,
+                                    useDistinctMeasurementCountLongTerm = TRUE,
+                                    useDistinctObservationCountLongTerm = TRUE,
+                                    useVisitCountLongTerm = TRUE,
+                                    useVisitConceptCountLongTerm = TRUE,
+                                    longTermStartDays = -365,
+                                    excludedCovariateConceptIds = ###################3,
+                                    endDays = 0)
+```
+
+#### Extract cohort data from cdm_precision schema
+
+```{r extract cohort data COVID, eval=TRUE}
+plpData_COVID <- getPlpData(connectionDetails = cd,
+                      cdmDatabaseSchema = "cdm_precision",
+                      cohortDatabaseSchema = "cdm_precision",
+                      cohortTable = "cohort",
+                      cohortId = 1,
+                      covariateSettings = covSettings_COVID,
+                      outcomeDatabaseSchema = "cdm_precision",
+                      outcomeTable = "cohort",
+                      outcomeIds = 2)
+
+```
+
+```{r extract cohort data Death, eval=TRUE}
+plpData_COVIDDeath <- getPlpData(connectionDetails = cd,
+                      cdmDatabaseSchema = "cdm_precision",
+                      cohortDatabaseSchema = "cdm_precision",
+                      cohortTable = "cohort",
+                      cohortId = 1,
+                      covariateSettings = covSettings_COVIDDeath,
+                      outcomeDatabaseSchema = "cdm_precision",
+                      outcomeTable = "cohort",
+                      outcomeIds = 3)
+
+```
+
+```{r extract cohort data Ventilation, eval=TRUE}
+plpData_COVIDVent <- getPlpData(connectionDetails = cd,
+                      cdmDatabaseSchema = "cdm_precision",
+                      cohortDatabaseSchema = "cdm_precision",
+                      cohortTable = "cohort",
+                      cohortId = 1,
+                      covariateSettings = covSettings_COVIDVent,
+                      outcomeDatabaseSchema = "cdm_precision",
+                      outcomeTable = "cohort",
+                      outcomeIds = 4)
+
+```
+
+#### Create a study population
+
+```{r create study population COVID, eval=TRUE}
+population_COVID <- createStudyPopulation(plpData = plpData_COVID,
+                                    outcomeId = 2,
+                                    includeAllOutcomes = TRUE,
+                                    firstExposureOnly = FALSE,
+                                    washoutPeriod = 0,
+                                    removeSubjectsWithPriorOutcome = FALSE,
+                                    priorOutcomeLookback = 9999,
+                                    requireTimeAtRisk = TRUE,
+                                    minTimeAtRisk = 0,
+                                    riskWindowStart = 0,
+                                    riskWindowEnd = 365)
+```
+
+```{r create study population Death, eval=TRUE}
+population_COVIDDeath <- createStudyPopulation(plpData = plpData_COVIDDeath,
+                                    outcomeId = 3,
+                                    includeAllOutcomes = TRUE,
+                                    firstExposureOnly = FALSE,
+                                    washoutPeriod = 0,
+                                    removeSubjectsWithPriorOutcome = FALSE,
+                                    priorOutcomeLookback = 9999,
+                                    requireTimeAtRisk = TRUE,
+                                    minTimeAtRisk = 0,
+                                    riskWindowStart = 0,
+                                    riskWindowEnd = 365)
+```
+
+```{r create study population Ventilation, eval=TRUE}
+population_COVIDVent <- createStudyPopulation(plpData = plpData_COVIDVent,
+                                    outcomeId = 4,
+                                    includeAllOutcomes = TRUE,
+                                    firstExposureOnly = FALSE,
+                                    washoutPeriod = 0,
+                                    removeSubjectsWithPriorOutcome = FALSE,
+                                    priorOutcomeLookback = 9999,
+                                    requireTimeAtRisk = TRUE,
+                                    minTimeAtRisk = 0,
+                                    riskWindowStart = 0,
+                                    riskWindowEnd = 365)
+```
+
+#### Random Forest models settings
+
+```{r Random Forest Model settings, eval=TRUE}
+RFModel <- setRandomForest(  mtries = 20,
+                             ntrees = 500,
+                             maxDepth = 7,
+                             varImp = T,
+                             seed = 0)
+```
+
+#### Random Forest Model- COVID
+
+```{r Random Forest Model COVID, eval=TRUE}
+RFResults <- runPlp(population = population_COVID, 
+                     plpData = plpData_COVID, 
+                     modelSettings = RFModel, 
+                     saveDirectory = "C:/Users/misrap/Desktop/COVID/precisionFDA/ML_models",
+                     testSplit = 'person',
+                     testFraction = 0.25, 
+                     nfold = 3, 
+                     splitSeed = 0)
+```
+
+#### Random Forest Model- COVIDDeath
+
+```{r Random Forest Model Death, eval=TRUE}
+RFResults <- runPlp(population = population_COVIDDeath, 
+                     plpData = plpData_COVID, 
+                     modelSettings = RFModel, 
+                     saveDirectory = "C:/Users/misrap/Desktop/COVID/precisionFDA/ML_models",
+                     testSplit = 'person',
+                     testFraction = 0.25, 
+                     nfold = 3, 
+                     splitSeed = 0)
+```
+
+#### Random Forest Model- COVIDVent
+
+```{r Random Forest Model Ventilation, eval=TRUE}
+RFResults <- runPlp(population = population_COVIDVent, 
+                     plpData = plpData_COVIDVent, 
+                     modelSettings = RFModel, 
+                     saveDirectory = "C:/Users/misrap/Desktop/COVID/precisionFDA/ML_models",
+                     testSplit = 'person',
+                     testFraction = 0.25, 
+                     nfold = 3, 
+                     splitSeed = 0)
+```
+
+
+
+### Test data- Make Cohorts, set Covariate, extract plpData, make Population and get Predictions
+
+#### Make Cohorts
+
+#### Make cohort table in cdm_precision_test schema
+
+```{r create cohort table, eval=TRUE}
+sql <- "drop table if exists @cdm.cohort;
+CREATE TABLE @cdm.cohort (  subject_id bigint,  cohort_start_date date, cohort_end_date date,  cohort_definition_id integer);"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision_test")
+```
+
+#### Cohort 1: All patients
+
+```{r create cohort 1, eval=TRUE}
+sql <- "SELECT person_id AS subject_id,
+ condition_start_date AS cohort_start_date,
+ condition_end_date AS cohort_end_date
+INTO #diagnoses
+FROM @cdm.condition_occurrence
+WHERE condition_concept_id IN (
+   SELECT descendant_concept_id
+   FROM @cdm.concept_ancestor
+);"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision_test")
+
+sql <- "INSERT INTO @cdm.cohort (
+  subject_id, 
+  cohort_start_date,
+  cohort_end_date,
+  cohort_definition_id
+  )
+SELECT subject_id,
+  cohort_start_date,
+  cohort_end_date,
+  CAST (1 AS INT) AS cohort_definition_id
+FROM #diagnoses;"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision_test")
+
+sql <- "TRUNCATE TABLE #diagnoses;
+DROP TABLE #diagnoses;"
+renderTranslateExecuteSql(conn, sql)
+```
+
+#### Cohort 2: All patients
+
+```{r create cohort 2, eval=TRUE}
+sql <- "SELECT person_id AS subject_id,
+ condition_start_date AS cohort_start_date,
+ condition_end_date AS cohort_end_date
+INTO #diagnoses
+FROM @cdm.condition_occurrence
+WHERE condition_concept_id IN (
+   SELECT descendant_concept_id
+   FROM @cdm.concept_ancestor
+);"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision_test")
+
+sql <- "INSERT INTO @cdm.cohort (
+  subject_id, 
+  cohort_start_date,
+  cohort_end_date,
+  cohort_definition_id
+  )
+SELECT subject_id,
+  cohort_start_date,
+  cohort_end_date,
+  CAST (2 AS INT) AS cohort_definition_id
+FROM #diagnoses;"
+renderTranslateExecuteSql(conn, sql, cdm = "cdm_precision_test")
+
+sql <- "TRUNCATE TABLE #diagnoses;
+DROP TABLE #diagnoses;"
+renderTranslateExecuteSql(conn, sql)
+```
+
+#### Covariate settings
+
+```{r covariate settings, eval=TRUE}
+covSettings <- createCovariateSettings(useDemographicsGender = TRUE,
+                                    useDemographicsAge = TRUE,
+                                    useDemographicsRace = TRUE,
+                                    useDemographicsEthnicity = TRUE,
+                                    useDemographicsIndexYear = TRUE,
+                                    useConditionOccurrenceAnyTimePrior = TRUE,
+                                    useConditionOccurrencePrimaryInpatientAnyTimePrior = TRUE,
+                                    useConditionEraAnyTimePrior = TRUE,
+                                    useConditionGroupEraAnyTimePrior = TRUE,
+                                    useDrugExposureAnyTimePrior = TRUE,
+                                    useDrugEraAnyTimePrior = TRUE,
+                                    useDrugGroupEraAnyTimePrior = TRUE,
+                                    useProcedureOccurrenceAnyTimePrior = TRUE,
+                                    useDeviceExposureAnyTimePrior = TRUE,
+                                    useMeasurementAnyTimePrior = TRUE,
+                                    useMeasurementValueAnyTimePrior = TRUE,
+                                    useMeasurementRangeGroupAnyTimePrior = TRUE,
+                                    useObservationAnyTimePrior = TRUE,
+                                    useCharlsonIndex = TRUE,
+                                    useDcsi = TRUE,
+                                    useChads2 = TRUE,
+                                    useChads2Vasc = TRUE,
+                                    useHfrs = TRUE,
+                                    useDistinctConditionCountLongTerm = TRUE,
+                                    useDistinctIngredientCountLongTerm = TRUE,
+                                    useDistinctProcedureCountLongTerm = TRUE,
+                                    useDistinctMeasurementCountLongTerm = TRUE,
+                                    useDistinctObservationCountLongTerm = TRUE,
+                                    useVisitCountLongTerm = TRUE,
+                                    useVisitConceptCountLongTerm = TRUE,
+                                    longTermStartDays = -365,
+                                    endDays = 0)
+```
+
+#### Extract cohort data from cdm_precision_test schema
+
+```{r extract cohort data, eval=TRUE}
+plpData <- getPlpData(connectionDetails = cd,
+                      cdmDatabaseSchema = "cdm_precision_test",
+                      cohortDatabaseSchema = "cdm_precision_test",
+                      cohortTable = "cohort",
+                      cohortId = 1,
+                      covariateSettings = covSettings,
+                      outcomeDatabaseSchema = "cdm_precision_test",
+                      outcomeTable = "cohort",
+                      outcomeIds = 2)
+
+summary(plpData)
+```
+
+#### Create a study population
+
+```{r create study population, eval=TRUE}
+population <- createStudyPopulation(plpData = plpData,
+                                    outcomeId = 2,
+                                    includeAllOutcomes = TRUE,
+                                    firstExposureOnly = TRUE,
+                                    washoutPeriod = 0,
+                                    removeSubjectsWithPriorOutcome = FALSE,
+                                    priorOutcomeLookback = 9999,
+                                    requireTimeAtRisk = TRUE,
+                                    minTimeAtRisk = 0,
+                                    riskWindowStart = 0,
+                                    riskWindowEnd = 365)
+```
+
+#### Making Predictions
+
+```{r Predictions, eval=TRUE}
+Prediction_COVID <- predictPlp(plpModel_COVID$model, population, plpData, index = NULL)
+Prediction_COVIDDeath <- predictPlp(plpModel_COVID$model, population, plpData, index = NULL)
+Prediction_COVIDVent <- predictPlp(plpModel_COVID$model, population, plpData, index = NULL)
+```
+
+#### Mapping Predictions to person_source_value
+
+```{r Mapping Predictions, eval=TRUE}
+
+#FileName is the csv file downloaded from PostgreSQL which has person_source_id mapped with person_id
+FileName <- Person_table.csv 
+
+CSV <- read.csv("FileName")
+
+Result_COVID <- merge(Prediction_COVID,CSV,by.x="subjectId",by.y="person_id")
+Result_COVIDDeath <- merge(Prediction_COVIDDeath,CSV,by.x="subjectId",by.y="person_id")
+Result_COVIDVent <- merge(Prediction_COVIDVent,CSV,by.x="subjectId",by.y="person_id")
+
+Result_COVID <- select(Result_COVID,"person_source_value","value")
+Result_COVIDDeath <- select(Result_COVIDDeath,"person_source_value","value")
+Result_COVIDVent <- select(Result_COVIDVent,"person_source_value","value")
+
+write.csv(Final_result, "Submission_RandomForest_AllPatients_COVIDVent_AllPatients_AllPatients.csv")
+```

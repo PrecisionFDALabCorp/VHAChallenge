@@ -781,7 +781,7 @@ summary(plpData)
 population <- createStudyPopulation(plpData = plpData,
                                     outcomeId = 2,
                                     includeAllOutcomes = TRUE,
-                                    firstExposureOnly = TRUE,
+                                    firstExposureOnly = FALSE,
                                     washoutPeriod = 0,
                                     removeSubjectsWithPriorOutcome = FALSE,
                                     priorOutcomeLookback = 9999,
@@ -817,4 +817,5 @@ Result_COVIDDeath <- select(Result_COVIDDeath,"person_source_value","value")
 Result_COVIDVent <- select(Result_COVIDVent,"person_source_value","value")
 
 write.csv(Final_result, "Submission_RandomForest_AllPatients_COVIDVent_AllPatients_AllPatients.csv")
+
 ```
